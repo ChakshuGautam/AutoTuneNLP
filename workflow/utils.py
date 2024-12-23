@@ -226,7 +226,7 @@ def get_task_config(task=None):
             },
             "telemetry_data_field": {"input": "query", "output": None},
             "model_save_path": "SamagraDataGov/e2e-test",
-            "dataset_path": "SamagraDataGov/akai_text_01",
+            "dataset_path": "SamagraDataGov/test_akai_data03",
             "system_prompt": """The classifier model that you're training is a BERT classifier with the following classes and class descriptions : 
                                 agricultural_scheme: The farmer query is about schemes in Odisha
                                 agriculture: General agri queries
