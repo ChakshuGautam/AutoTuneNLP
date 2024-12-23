@@ -29,8 +29,15 @@ def train(self, req_data, user_id, training_task):
     try:
         huggingface_id = req_data.get("save_path").split("/")[0]
         model_name = req_data.get("save_path").split("/")[-1]
+        try:
+            user = User.objects.get(user_id=user_id)
+        except User.DoesNotExist:
+            logger.error(f"User with ID {user_id} does not exist.")
+            return  # Exit if the user does not exist
 
         model_id = req_data.get("model_id")
+
+        logger.debug(f"User: {user}")
         if model_id:
             # Check if the model exists
             try:
@@ -55,9 +62,10 @@ def train(self, req_data, user_id, training_task):
                 uploaded_at=timezone.now(),
                 latest_commit_hash=meta.get("latest_commit_hash"),
                 huggingface_id=huggingface_id,
+                user=user,
             )
             logger.info("Created a new MLModel")
-        user = User.objects.get(user_id=user_id)
+        
 
         TrainingMetadata.objects.create(
             model=ml_model, logs=meta["logs"], metrics=meta["metrics"], user=user
@@ -92,12 +100,12 @@ def train_model(celery, req_data, task_id):
 
     trainer.train()
 
-    # _, _, metrics = trainer.predict(task.tokenized_dataset["test"])
+    _, _, metrics = trainer.predict(task.tokenized_dataset["test"])
     # json_metrics = json.dumps(metrics)
     # json_bytes = json_metrics.encode("utf-8")
     # fileObj = io.BytesIO(json_bytes)
 
-    # meta = {"logs": trainer.state.log_history, "metrics": metrics}
+    meta = {"logs": trainer.state.log_history, "metrics": metrics}
     # celery.update_state(state="PUSHING", meta=meta)
 
     api_key = settings.HUGGING_FACE_TOKEN
@@ -121,7 +129,7 @@ def train_model(celery, req_data, task_id):
 
     logger.info("Training complete")
 
-    # return meta
+    return meta
 
 @shared_task(bind=True)
 def mine_negatives():

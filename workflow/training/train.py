@@ -181,7 +181,7 @@ def train_model(celery, req_data, task_id):
 
     api_key = settings.HUGGING_FACE_TOKEN
     login(token=api_key)
-    task.push_to_hub(trainer, req_data["save_path"], hf_token=api_key)
+    task.push_to_hub(trainer, req_data["save_path"], hf_token=api_key, metrics  = metrics, dataset_name = req_data["dataset"] )
 
     hfApi = HfApi(endpoint="https://huggingface.co", token=api_key)
     upload = hfApi.upload_file(
