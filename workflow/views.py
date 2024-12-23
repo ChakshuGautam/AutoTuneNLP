@@ -756,6 +756,16 @@ class TrainModelView(UserIDMixin, CreateMLBaseMixin, CacheDatasetMixin, APIView)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class InvalidateDatasetCache(UserIDMixin, CacheDatasetMixin, APIView):
+    def post(self,request):
+        cached_dataset_id = request.META.get("cached_dataset_id", None)
+        
+        cached_dataset = Dataset.objects.get(id=cached_dataset_id)
+        
+        cached_dataset.delete()
+        
+        return Response({"message": "Dataset cache invalidated successfully"}, status=200)
+    
 
 class MLModelListView(UserIDMixin, CreateMLBaseMixin, APIView):
 
