@@ -199,9 +199,7 @@ class CacheDatasetMixin:
                         is_locally_cached=False,
                     )
 
-                # data not in cache
-                if not dataset_object.is_locally_cached:
-                    self.cache_dataset(dataset_object, task_mapping, dataset, user)
+                self.cache_dataset(dataset_object, task_mapping, dataset, user)
 
             # Dataset generated at autotune and user wants to use that.
             elif not created:
@@ -214,13 +212,12 @@ class CacheDatasetMixin:
                 if not dataset_object:
                     raise ValueError("No dataset associated with the workflow.")
 
-                if not dataset_object.is_locally_cached:
-                    self.cache_dataset(
-                        dataset_object,
-                        task_mapping,
-                        f"{dataset_object.huggingface_id}/{dataset_object.name}",
-                        user,
-                    )
+                self.cache_dataset(
+                    dataset_object,
+                    task_mapping,
+                    f"{dataset_object.huggingface_id}/{dataset_object.name}",
+                    user,
+                )
 
             else:
                 raise ValueError("No dataset available.")
@@ -298,13 +295,24 @@ class CacheDatasetMixin:
         logger.info("didnt find the dataset in the cache, creating a new cache")
         hf_api = HfApi(token=settings.HUGGING_FACE_TOKEN)
 
-        if hf_api.repo_exists(repo_id=dataset, repo_type="dataset"):
-            repo_info = hf_api.repo_info(repo_id=dataset, repo_type="dataset")
-            repo_files = hf_api.list_repo_files(repo_id=dataset, repo_type="dataset")
-            csv_file_names = [f for f in repo_files if f.endswith(".csv")]
-
-        else:
+        if not hf_api.repo_exists(repo_id=dataset, repo_type="dataset"):
             raise FileNotFoundError("Dataset not found.")
+
+        repo_info = hf_api.repo_info(repo_id=dataset, repo_type="dataset")
+        repo_files = hf_api.list_repo_files(repo_id=dataset, repo_type="dataset")
+        csv_file_names = [f for f in repo_files if f.endswith(".csv")]
+        
+        latest_commit_hash = repo_info.sha  
+        if dataset_object.latest_commit_hash == latest_commit_hash and dataset_object.is_locally_cached:
+            logger.info("Dataset is already cached and up to date.")
+            return
+        
+        logger.info("Dataset cache is outdated or not cached. Invalidating old cache...")
+        DatasetData.objects.filter(dataset=dataset_object).delete()
+        dataset_object.is_locally_cached = False
+        dataset_object.latest_commit_hash = None
+        dataset_object.save()
+
 
         csv_files = []
 
@@ -357,3 +365,4 @@ class CacheDatasetMixin:
         dataset_object.is_locally_cached = True
         dataset_object.latest_commit_hash = repo_info.sha
         dataset_object.save()
+        logger.info("Dataset successfully cached.")
