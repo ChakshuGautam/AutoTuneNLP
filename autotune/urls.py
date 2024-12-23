@@ -29,6 +29,7 @@ from workflow.views import (
     ModelIterationView,
     PingCheckView,
     TaskView,
+    InvalidateDatasetCache
 )
 
 schema_view = get_schema_view(
@@ -70,4 +71,6 @@ urlpatterns = [
         ModelDeployView.as_view(),
         name="deploy-model",
     ),
+    path("datasets/invalidate", InvalidateDatasetCache.as_view(),name="invalidate-cache")
+    
 ]
