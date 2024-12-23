@@ -99,7 +99,7 @@ class MLModel(models.Model):
     name = models.CharField(max_length=255)
     huggingface_id = models.CharField(null=True, blank=True)
     last_trained = models.DateTimeField(null=True, blank=True)
-    latest_commit_hash = models.UUIDField(null=True, blank=True)
+    latest_commit_hash = models.CharField(null=True, blank=True, max_length=255)
     is_trained_at_autotune = models.BooleanField(default=False)
     is_locally_cached = models.BooleanField(default=False)
     trained_on = models.ForeignKey(

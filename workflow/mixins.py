@@ -1,7 +1,7 @@
 import logging
 import traceback
 import uuid
-
+import json
 import pandas as pd
 from django.conf import settings
 from django.core.cache import cache
@@ -16,7 +16,7 @@ from rest_framework.response import Response
 
 from workflow.models import User
 
-from .models import Dataset, DatasetData, MLModel, MLModelConfig, Workflows
+from .models import Dataset, DatasetData, MLModel, MLModelConfig, Workflows, WorkflowConfig
 from .utils import create_pydantic_model, get_task_config, get_task_mapping
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class CreateMLBaseMixin:
         print(f"Created new workflow '{workflow_name}' for model ID {ml_model.id}")
 
 
-import json
+
 
 
 class CacheDatasetMixin:
@@ -167,7 +167,16 @@ class CacheDatasetMixin:
                     model__task=task_type,
                     model__config__dataset_path=dataset,
                 ).first()
-                workflow_id = workflow.workflow_id
+                
+
+                if not workflow:
+                    logger.info(f"No workflow found for user_id={user_id}, task_type={task_type}, dataset={dataset}")
+                    workflow = self.create_new_workflow(user, task_type, dataset)
+                    workflow_id = workflow.workflow_id
+                
+                else:
+                    workflow_id = workflow.workflow_id
+                    #request.META["workflow_id"] = workflow_id
 
                 if task_type in ["whisper_finetuning", "embedding_finetuning"]:
                     request.META["workflow_id"] = workflow_id
@@ -220,7 +229,8 @@ class CacheDatasetMixin:
             request.META["workflow_id"] = workflow_id
 
             response = super().dispatch(request, *args, **kwargs)
-
+            logger.info(f"Dataset: {dataset}, Task Type: {task_type}, Workflow: {workflow}")
+    
             print("Request pre-processing completed.")
 
             return response
@@ -241,6 +251,48 @@ class CacheDatasetMixin:
         response.accepted_media_type = "application/json"
         response.renderer_context = {}
         return response
+
+    def create_new_workflow(self, user, task_type, dataset):
+        """
+        Create a new workflow dynamically if no workflow exists for the given dataset and task type.
+        """
+        logger.info(f"Creating a new workflow for user_id={user.user_id}, task_type={task_type}, dataset={dataset}")
+
+        # Get or create the MLModelConfig and MLModel
+        huggingface_id, dataset_name = dataset.split("/")
+        #task_config = get_task_config(task_type)
+
+        ml_model_config, _ = MLModelConfig.objects.get_or_create(
+            model_save_path=f"{huggingface_id}/{dataset_name}",
+            dataset_path=dataset,
+            type=task_type,
+            #model_string=task_config.get("model_string", ""),
+        )
+
+        ml_model, _ = MLModel.objects.get_or_create(
+            user=user,
+            config=ml_model_config,
+            task=task_type,
+            name=f"{task_type} Model",
+            huggingface_id=dataset,
+        )
+
+        # Create a new WorkflowConfig
+        workflow_config = None
+
+        # Create the Workflow
+        workflow = Workflows.objects.create(
+            workflow_name=f"{task_type} Workflow",
+            workflow_config=workflow_config,
+            user=user,
+            model=ml_model,
+            status=Workflows.WorkflowStatus.SETUP,
+            type=Workflows.WorkflowType.TRAINING,
+        )
+
+        logger.info(f"Created new workflow with ID {workflow.workflow_id} for user_id={user.user_id}")
+        return workflow
+
 
     def cache_dataset(self, dataset_object, task_mapping, dataset, user):
         logger.info("didnt find the dataset in the cache, creating a new cache")

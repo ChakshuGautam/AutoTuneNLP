@@ -10,8 +10,9 @@ from transformers import (
 from functools import partial
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
-
-
+from huggingface_hub import HfApi, CommitOperationAdd
+import io 
+import json
 # needs train and validation in the dataset
 # needs 'class'/'label' column in the dataset
 class TextClassification(Tasks):
@@ -92,11 +93,55 @@ class TextClassification(Tasks):
             predictions=predictions, references=labels, average="macro"
         )
 
-    def push_to_hub(self, trainer, save_path, hf_token=None):
+    def push_to_hub(self, trainer, save_path, hf_token=None, metrics=None, dataset_name= ''):
         trainer.model.push_to_hub(
             save_path, commit_message="pytorch_model.bin upload/update"
         )
         trainer.tokenizer.push_to_hub(save_path)
+
+        model_card = self._build_model_card_text(save_path, metrics, dataset_name)
+
+        ##Upload the README.md
+        hf_api = HfApi(token=hf_token)
+        readme_bytes = model_card.encode("utf-8")
+
+        commit_info = hf_api.create_commit(
+            repo_id=save_path,
+            repo_type="model",
+            commit_message="Add or update model card README",
+            operations=[CommitOperationAdd(path_in_repo="README.md", path_or_fileobj=io.BytesIO(readme_bytes))],
+        )
+        print(f"Model card commit info: {commit_info}")
+
+    def _build_model_card_text(self, repo_id, metrics, dataset_name):
+        """
+        Returns a string that will be placed into README.md.
+        You can customize this as you like.
+        """
+   
+        md_table =  """
+        | Metric | Value |
+        | --- | --- | 
+        """
+    # Loop over the metrics to append rows
+        for k, v in metrics.items():
+            md_table += f"| {k} | {v} | \n "
+
+
+        model_card = f"""
+        license: apache-2.0
+        ---
+        # {repo_id}
+
+        This is a text-classification model fine-tuned on `{self.model_name}` using the dataset `{dataset_name}`.
+
+        ## Evaluation Results
+
+        Below are the evaluation metrics from the training run:
+
+        {md_table}
+        """
+        return model_card
 
     def get_training_args(self, req_data, dataset):
 
