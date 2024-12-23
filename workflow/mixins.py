@@ -13,6 +13,7 @@ from huggingface_hub import HfApi
 from rest_framework import status
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+from uuid import UUID
 
 from workflow.models import User
 
@@ -292,7 +293,6 @@ class CacheDatasetMixin:
 
 
     def cache_dataset(self, dataset_object, task_mapping, dataset, user):
-        logger.info("didnt find the dataset in the cache, creating a new cache")
         hf_api = HfApi(token=settings.HUGGING_FACE_TOKEN)
 
         if not hf_api.repo_exists(repo_id=dataset, repo_type="dataset"):
@@ -311,7 +311,8 @@ class CacheDatasetMixin:
         DatasetData.objects.filter(dataset=dataset_object).delete()
         dataset_object.is_locally_cached = False
         dataset_object.latest_commit_hash = None
-        dataset_object.save()
+        dataset_object.save()        
+        logger.info("cache invalidated")
 
 
         csv_files = []
@@ -329,6 +330,7 @@ class CacheDatasetMixin:
             raise ValueError("Dataset doesn't have any CSV files.")
 
         for csv_file in csv_files:
+            logger.info(f"caching the csv file {csv_file}")
             df = pd.read_csv(csv_file)
 
             for csv_column in task_mapping.values():
@@ -347,20 +349,25 @@ class CacheDatasetMixin:
                 df["record_id"] = [str(uuid.uuid4()) for _ in range(len(df))]
 
             filename = csv_file.split("/")[-1]
-            for _, row in df.iterrows():
+            rows = df.to_dict(orient="records")
+
+            row_data_list = []
+
+            for row in rows:
+                logger.debug(row)
                 row_data = DatasetData(
-                    record_id=uuid.UUID(row["record_id"]),
+                    record_id=UUID(row["record_id"]),
                     dataset=dataset_object,
                     file=filename,
                     user=user,
                 )
-
-                # get the appropriate columns and their mapping.
+                
                 for task_key, csv_column in task_mapping.items():
                     setattr(row_data, task_key, row[csv_column])
 
-                row_data.save()
-            logger.info(f"inserted all record into the db for {filename}")
+                row_data_list.append(row_data)
+
+            DatasetData.objects.bulk_create(row_data_list)
 
         dataset_object.is_locally_cached = True
         dataset_object.latest_commit_hash = repo_info.sha
